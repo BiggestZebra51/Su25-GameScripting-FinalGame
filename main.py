@@ -282,9 +282,9 @@ def on_gameplay_events(event, dt:float):
     # Key presses
     # Both key down and key up are used for the input vectors to undo the key press
     if event.type == pygame.KEYDOWN:
-        if event.key == pygame.K_LEFT:
+        if event.key == pygame.K_LEFT or event.key == pygame.K_a:
             input_vector.x += -1
-        if event.key == pygame.K_RIGHT:
+        if event.key == pygame.K_RIGHT or event.key == pygame.K_d:
             input_vector.x += 1
         # DEBUG
         if event.key == pygame.K_F3:
@@ -293,9 +293,9 @@ def on_gameplay_events(event, dt:float):
             platforms.clear()
         # END DEBUG
     elif event.type == pygame.KEYUP:
-        if event.key == pygame.K_LEFT:
+        if event.key == pygame.K_LEFT or event.key == pygame.K_a:
             input_vector.x += 1
-        if event.key == pygame.K_RIGHT:
+        if event.key == pygame.K_RIGHT or event.key == pygame.K_d:
             input_vector.x += -1
     # On Spawn Platform
     elif event.type == SPAWN_PLATFORM:
