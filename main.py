@@ -9,12 +9,10 @@ from HelperClasses import *
 
 pygame.init()
 
+# Create a rect based on "center" coordinates
 def calculate_centered_rect(x:int|float, y:int|float, w:int|float, h:int|float):
+    """ Returns a Rect centered on xy """
     return Rect(x - w/2, y - h/2, w, h)
-
-# Screen
-screen = pygame.display.set_mode((1024, 512))
-pygame.display.set_caption("Test Game")
 
 # Background Sprites
 background_sprites = [
@@ -34,10 +32,16 @@ player_sprites = {
     "idle": pygame.image.load("sprites/player/idle.png"),
     "dead": pygame.image.load("sprites/player/dead.png"),
 }
+# Hud Sprites
 heart_sprites = [
     pygame.image.load("sprites/hud/heart/empty.png"),
     pygame.image.load("sprites/hud/heart/full.png"),
 ]
+
+# Screen
+screen = pygame.display.set_mode((1024, 512))
+pygame.display.set_caption("Slime Bounce")
+pygame.display.set_icon(player_sprites["idle"])
 
 # Rescale background images to fit screen height, assuming the images are square
 for i in range(len(background_sprites)):
@@ -53,7 +57,7 @@ for i in range(len(platform_sprites)):
 # Setup fonts
 pygame.font.init() # you have to call this at the start, 
                    # if you want to use this module.
-debug_font = pygame.font.SysFont('Comic Sans MS', 16)
+stats_font = pygame.font.SysFont('Comic Sans MS', 16)
 title_font = pygame.font.SysFont('Comic Sans MS', 64)
 button_font = pygame.font.SysFont('Comic Sans MS', 32)
 title_button_font = pygame.font.SysFont('Comic Sans MS', 40)
@@ -86,7 +90,7 @@ paused_quit_rect = paused_quit.get_rect().scale_by(1.2,1.2)
 # Put in bottom left corner of screen
 paused_quit_rect.bottomleft = (50, screen.get_height() - 50)
 
-# End screen
+# Results screen
 results_page_rect = calculate_centered_rect(screen.get_width()/2, screen.get_height()/2,\
                                             screen.get_width()/3.25, screen.get_height()/1.25)
 
@@ -94,13 +98,13 @@ results_text = title_font.render("You died", True, (255,255,255))
 results_rect = results_text.get_rect()
 results_rect.center = (int(screen.get_width()/2), int(results_page_rect.top + results_rect.h/2))
 
-# End screen Quit button
+# Results screen Quit button
 results_quit = button_font.render("Return", True, (255,255,255))
 results_quit_rect = results_quit.get_rect().scale_by(1.2,1.2)
 # Put in bottom left corner of screen
 results_quit_rect.bottomleft = (50, screen.get_height() - 50)
 
-# End screen retry button
+# Results screen retry button
 results_retry = button_font.render("Retry", True, (255,255,255))
 results_retry_rect = results_retry.get_rect().scale_by(1.2,1.2)
 # Put in bottom left corner of screen
@@ -118,7 +122,7 @@ player_gravity = 200
 player_control_speed = 500
 player_bounce_factor = pygame.Vector2(0.8, 1)
 
-# Platform variables
+# Platform settings
 platform_spawn_rate = 1000
 platform_spawn_heights = [340, 395, 450]
 platform_spawn_speeds = [-200, 400, -150]
@@ -135,7 +139,6 @@ running = True
 paused = False
 scene = 0
 background = random.randint(0, len(background_sprites)-1)
-player_lives = 0
 
 _debug = False
 _previous_cursor_pos = Vector2()
@@ -143,20 +146,22 @@ _previous_cursor_pos = Vector2()
 input_vector = pygame.Vector2()
 player_motion = pygame.Vector2()
 player_state = "idle"
+player_lives = 0
 
 # We are going to use floating points for position for smoother velocity application
 # Apparently Pygame CE has a "frect" which would have solved this issue for me
 player_position = pygame.Vector2()
 player_rect = player_sprites["idle"].get_rect()
 
+# List of all platforms
 platforms:list[Platform] = []
-
 # Dictionary of statistics to keep track of and print in the results page
 results_stats:dict[str,ScoreStat] = {}
 
 def add_results_stat(stat:str):
+    """ Adds a new score statistic with the key "stat" """
     # Format highest_speed to Highest Speed
-    text = debug_font.render(str.capitalize(stat).replace('_', ' '), True, (255,255,255))
+    text = stats_font.render(str.capitalize(stat).replace('_', ' '), True, (255,255,255))
     rect = text.get_rect()
     rect.left = results_page_rect.left + 25
     rect.centery = 150 + len(results_stats) * (rect.h+12)
@@ -171,6 +176,10 @@ add_results_stat("platform_bounces")
 # Move player storing the position as a floating vector instead of a pixel perfect position
 # This makes the movement smoother
 def move_player_to(x:float|None = None, y:float|None = None):
+    """ Moves the player to x or y, or both
+
+        Use this instead of setting position directly
+    """
     if(x is not None and y is not None):
         player_position.update(x, y)
     else:
@@ -182,6 +191,10 @@ def move_player_to(x:float|None = None, y:float|None = None):
     player_rect.centerx = int(player_position.x)
     player_rect.centery = int(player_position.y)
 def move_player_by(offset:Vector2):
+    """ Moves the player by the offset
+    
+        Use this instead of setting position directly
+    """
     # Use update to avoid unnecessary global and reassignment 
     player_position.update(player_position + offset)
 
@@ -189,6 +202,14 @@ def move_player_by(offset:Vector2):
     player_rect.centery = int(player_position.y)
 
 def spawn_random_platform(dt:float|None = None, x:int|None = None, y:int|None = None):
+    """
+        Spawns a random platform on the screen with one of the `platform_spawn_speeds` values
+
+        if x is not defined this will place the platform off the screen opposite of the speed direction
+        dt is recommended if x is not specified, to do a movement step back into the screen
+        if y is not defined a value from `platform_spawn_speeds` will be chosen (same index as speed)
+    """
+
     # Add variation to length and position
     height_index = random.randint(0, len(platform_spawn_heights) - 1)
     sprite_index = random.randint(0, len(platform_sprites) - 1)
@@ -224,6 +245,9 @@ def spawn_random_platform(dt:float|None = None, x:int|None = None, y:int|None = 
     platforms.append(Platform(sprite_index, rect, Vector2(speed,0)))
 
 def respawn_player():
+    """
+        Respawns the player while decrementing the current `player_lives`
+    """
     global player_state, player_lives
 
     # Reset motion and position
@@ -236,28 +260,29 @@ def respawn_player():
 
 
 def on_gameplay_events(event, dt:float):
+    """
+        All EVENTs that run during the gameplay scene
+    """
     global _debug, player_state
 
     # Key presses
+    # Both key down and key up are used for the input vectors to undo the key press
     if event.type == pygame.KEYDOWN:
         if event.key == pygame.K_LEFT:
             input_vector.x += -1
         if event.key == pygame.K_RIGHT:
             input_vector.x += 1
-        if event.key == pygame.K_DOWN:
-            input_vector.y += -1
         # DEBUG
         if event.key == pygame.K_F3:
             _debug = not _debug
         if _debug and event.key == pygame.K_F2:
             platforms.clear()
+        # END DEBUG
     elif event.type == pygame.KEYUP:
         if event.key == pygame.K_LEFT:
             input_vector.x += 1
         if event.key == pygame.K_RIGHT:
             input_vector.x += -1
-        if event.key == pygame.K_DOWN:
-            input_vector.y += 1
     # On Spawn Platform
     elif event.type == SPAWN_PLATFORM:
         spawn_random_platform(dt)
@@ -266,6 +291,9 @@ def on_gameplay_events(event, dt:float):
         player_state = "idle"
 
 def on_gameplay_update(dt:float):
+    """
+        Gameplay scene's update loop
+    """
     global player_state
     ######
     ## On Mouse Clicked
@@ -284,10 +312,11 @@ def on_gameplay_update(dt:float):
     ######
     ## Physics Update
     ##
+    # Update the player motion based on gravity and the input vector
     player_motion.x += input_vector[0] * player_control_speed * dt
     player_motion.y += player_gravity * dt
 
-    #global player_position
+    # Move player by the motion
     move_player_by(player_motion*dt)
 
     # IF outside of screen
@@ -344,6 +373,8 @@ def on_gameplay_update(dt:float):
             # Divide by tau instead of pi to get specific face
             axis = (round(angle / half_pi) * half_pi / math.tau) % 1
 
+            # This could be de-duplicated somewhat
+            # Check each direction to bounce and push the player out of the platform
             if(axis < 0.25):   # Left
                 player_motion.x *= -player_bounce_factor.x
                 if(platform.motion.x < 0): # If platform is moving left
@@ -365,13 +396,15 @@ def on_gameplay_update(dt:float):
                     player_motion.y += (player_motion.y + platform.motion.y) * 0.8
                 player_position.y = platform.rect.bottomright[1] + player_rect.height/2 + 1
 
-            #player_state = "bounce"
-            #pygame.time.set_timer(PLAYER_BOUNCE_END, 500, 1)
-
 def on_gameplay_draw():
+    """
+        Gameplay scene's draw loop
+    """
+    # Draw each platform
     for platform in platforms:
         screen.blit(platform_sprites[platform.sprite_index], platform.rect.topleft)
 
+    # Draw the player
     screen.blit(player_sprites[player_state], player_rect)
 
     ### Debug
@@ -379,16 +412,21 @@ def on_gameplay_draw():
         pygame.draw.line(screen, (255,0,0), player_rect.center, player_motion + player_rect.center, 5)
         #pygame.draw.line(screen, (0,255,0), pygame.mouse.get_pos(), _previous_cursor_pos, 5)
 
-        screen.blit(debug_font.render("Platforms %s" % len(platforms), True, (0,0,0)), (50,50))
-        screen.blit(debug_font.render("{0.x:3.2f}; {0.y:3.2f}".format(player_motion), True, (0,0,0)), (50,75))
-        screen.blit(debug_font.render("%3.2f; %3.2f" % player_rect.center, True, (0,0,0)), (50,100))
+        screen.blit(stats_font.render("Platforms %s" % len(platforms), True, (0,0,0)), (50,50))
+        screen.blit(stats_font.render("{0.x:3.2f}; {0.y:3.2f}".format(player_motion), True, (0,0,0)), (50,75))
+        screen.blit(stats_font.render("%3.2f; %3.2f" % player_rect.center, True, (0,0,0)), (50,100))
 
         #screen.blit(debug_font.render("%3.2f" % score_max_speed, True, (0,0,0)), (50,150))
+    ### END DEBUG
 
 def on_gameplay_hud_draw():
+    """
+        Gameplay scene's hud draw loop
+    """
     x = 40
     y = 40
     offset = heart_sprites[1].get_width()
+    # Draw each heart and fill depending on remaining `player_lives`
     for i in range(player_max_lives):
         position = (x + offset*i, y)
         if i < player_lives:
@@ -397,27 +435,38 @@ def on_gameplay_hud_draw():
             screen.blit(heart_sprites[0], position)
 
 
-
 def draw_button(text:pygame.Surface, rect:Rect, mouse_pos):
+    """
+        This handles drawing a button with highlighting on hover
+    """
+    # If mouse is on the button, draw lighter background otherwise draw black background
     if pygame.Rect.collidepoint(rect, mouse_pos):
         pygame.draw.rect(screen, (100,100,100), rect, border_radius=5)
     else:
         pygame.draw.rect(screen, (0,0,0), rect, border_radius=5)
     
+    # Center the text on the `rect`
     text_rect = text.get_rect()
     text_rect.center = rect.center
+    # Draw the text
     screen.blit(text, text_rect)
 
 def on_title_draw(mouse_pos):
+    """
+        Title scene's draw loop
+    """
+    # Draw the title
     screen.blit(title_text, (screen.get_width()/2 - title_text.get_width()/2,64))
-    # Add quit and play buttons
-
     # Play Button
     draw_button(title_play, title_play_rect, mouse_pos)
     # Quit Button
     draw_button(title_quit, title_quit_rect, mouse_pos)
     
 def on_paused_overlay_draw(mouse_pos):
+    """
+        Gameplay Paused overlay draw loop
+    """
+    # Draw full screen darken overlay
     transparent_overlay.fill((0,0,0,50))
     screen.blit(transparent_overlay, (0,0))
 
@@ -429,51 +478,73 @@ def on_paused_overlay_draw(mouse_pos):
     draw_button(paused_quit, paused_quit_rect, mouse_pos)
 
 def on_results_draw(mouse_pos):
+    """
+        Result page scene's update loop
+    """
     # Add a quit button to corner to go to menu
     draw_button(results_quit, results_quit_rect, mouse_pos)
     # Add replay button
     draw_button(results_retry, results_retry_rect, mouse_pos)
 
+    # Draw the transparent panel in the center of the screen
     pygame.draw.rect(transparent_overlay, (0,0,0,150), results_page_rect, border_radius=10)
     screen.blit(transparent_overlay, (0,0))
-    
+    # Draw the results page text on top
     screen.blit(results_text, results_rect)
 
+    # Draw each score stat in the panel
     for stat in results_stats:
+        # Draw label
         screen.blit(results_stats[stat].text, results_stats[stat].rect)
         
+        # Setup formatting for int vs float stats
         if results_stats[stat].value is float:
             format_str = "%.2f"
         else:
             format_str = "%i"
 
-        stat_text = debug_font.render(format_str%results_stats[stat].value, True, (255,255,255))
+        # Render the value's text
+        stat_text = stats_font.render(format_str%results_stats[stat].value, True, (255,255,255))
         stat_rect = stat_text.get_rect()
+        # Center the value with the label, then right align to the panel
         stat_rect.centery = results_stats[stat].rect.centery
         stat_rect.right = results_page_rect.right - 25
+        # Draw the value
         screen.blit(stat_text, stat_rect)
 
 
 def populate_platforms():
-    for i in range(5):
-        x = random.randint(0, screen.get_width())
+    """
+        Spawns platforms randomly on each floor
 
+        This is to give the player some platforms before timer spawned ones reach them on gameplay start
+    """
+    # Spawn 5 random platforms
+    for i in range(5):
+        # Choose random x position
+        x = random.randint(0, screen.get_width())
+        # Spawn platform
         spawn_random_platform(x=x)
 
 def initialize_gameplay():
+    """
+        Initialize/Reset all gameplay variables and stats
+    """
     global player_state, player_lives
+    
     # Reset variables
     input_vector.update()
     player_motion.update()
     player_state = "idle"
     player_lives = player_max_lives
 
+    # Center player
     move_player_to(screen.get_width()/2, screen.get_height()/2 - 100)
-
+    # Clear all platforms
     platforms.clear()
 
     # Stats
-    #score_max_speed = 0
+
     for stat in results_stats:
         results_stats[stat].value = 0
 
@@ -490,12 +561,12 @@ while running:
     # Button clicks
     if pygame.mouse.get_pressed()[0]: # Left click
         if paused:
-            # Quit to title btn
+            # Quit to title from paused
             if pygame.Rect.collidepoint(paused_quit_rect, mouse_pos):
                 scene = 0
                 paused = False
         elif scene == 0: # Title buttons
-            # Quit
+            # Quit game
             if pygame.Rect.collidepoint(title_quit_rect, mouse_pos):
                 running = False
                 break
@@ -503,8 +574,8 @@ while running:
             elif pygame.Rect.collidepoint(title_play_rect, mouse_pos):
                 scene = 1
                 initialize_gameplay()
-        elif scene == 2: # End screen buttons
-            # Return to title
+        elif scene == 2: # Results screen buttons
+            # Quit to title from results
             if pygame.Rect.collidepoint(results_quit_rect, mouse_pos):
                 scene = 0
             # Replay
@@ -526,18 +597,20 @@ while running:
                 if event.key == pygame.K_ESCAPE:
                     paused = not paused
             if not paused:
+                # Do gameplay events
                 on_gameplay_events(event, dt)
-
+        ### DEBUG
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_F4:
                 scene = (scene+1)%3
                 print("Changed scene to %i" % scene)
+        ### DEBUG END
 
     ######
     ## On Update
     ##
-
     if scene == 1 and not paused:
+        # Go to results if we run out of lives
         if player_lives <= 0:
             scene = 2
         else:
@@ -546,7 +619,7 @@ while running:
     ######
     ## On Draw
     ##
-    ### Draw background
+    # Clear transparent overlay
     transparent_overlay.fill((0,0,0,0))
 
     # Get the current background
