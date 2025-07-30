@@ -11,16 +11,17 @@ No horizontal camera movement
     - [X] Moving to the side, once off screen clear it
     - Account for spacing of other platforms (probably handled by time)
 - [] Get sprites
-    - Maybe grab alts for different 'levels'
-    - Slime sprites or other round bouncy thingy
-    - Background sprites
-    - Platform sprites
-    - Hud sprites
-        - Score tally
-        - Menu buttons
+    - [] Maybe grab alts for different 'levels'
+    - [X] Slime sprites or other round bouncy thingy
+    - [x] Background sprites
+        - [X] Add a condition that changes the background
+    - [X] Platform sprites
+    - [] Hud sprites
+        - [] Score tally
+        - [] Menu buttons
 - [] Add title screen with buttons
 - [] Add end screen
-- [] Maybe change to using rect collision directly
+- [x] Maybe change to using rect collision directly
 - [] Score for bounces, maybe a multiplier that resets on non platform bounce/respawn
 - [] Pause menu that can quit from?
 - COMMENT CODE 
