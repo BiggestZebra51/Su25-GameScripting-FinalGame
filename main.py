@@ -37,38 +37,61 @@ player_sprites = {
 for i in range(len(background_sprites)):
     background_sprites[i] = pygame.transform.scale(background_sprites[i], (screen.get_height(), screen.get_height()))
 
+# Rescale the platforms to be a little smaller
 global_platform_scale = 0.75
 for i in range(len(platform_sprites)):
     sprite = platform_sprites[i]
     platform_sprites[i] = pygame.transform.scale(sprite, (sprite.get_width() * global_platform_scale, sprite.get_height() * global_platform_scale))
 
-
+# Setup fonts
 pygame.font.init() # you have to call this at the start, 
                    # if you want to use this module.
-font = pygame.font.SysFont('Comic Sans MS', 16)
+debug_font = pygame.font.SysFont('Comic Sans MS', 16)
+title_font = pygame.font.SysFont('Comic Sans MS', 64)
+button_font = pygame.font.SysFont('Comic Sans MS', 32)
 
+# Static text renders and rects
+title_text = title_font.render("Slime Bounce", True, (0,0,0))
+paused_text = title_font.render("Paused", True, (255,255,255))
+
+paused_rect = paused_text.get_rect()
+paused_rect.center = (int(screen.get_width()/2), int(screen.get_height()/3))
+
+# Pause menu Quit button
+paused_quit = button_font.render("Quit", True, (255,255,255))
+paused_quit_rect = paused_quit.get_rect()
+# Put in bottom left corner of screen
+paused_quit_rect.bottomleft = (50, screen.get_height() - 50)
+
+
+# Setup clock
 clock = pygame.time.Clock()
-
-running = True
 
 # Constants
 half_pi = math.pi / 2
-platform_spawn_rate = 1000
+
+
+# Player physics constants
 player_gravity = 200
 player_control_speed = 500
-#player_radius = 20
+player_bounce_factor = pygame.Vector2(0.8, 1)
 
-bounce_factor = pygame.Vector2(0.8, 1)
-
+# Platform variables
+platform_spawn_rate = 1000
 platform_spawn_heights = [340, 395, 450]
 platform_spawn_speeds = [-200, 400, -150]
+
+# Determine the amount of times to tile the background based on width
+background_tile_count = math.ceil(screen.get_width() / background_sprites[0].get_width())
 
 # Events
 SPAWN_PLATFORM  = pygame.USEREVENT + 1
 PLAYER_RESET_STATE  = pygame.USEREVENT + 2
 
 # Variables
-scene = 1
+running = True
+paused = False
+scene = 0
 background = random.randint(0, len(background_sprites)-1)
 _debug = False
 
@@ -121,11 +144,15 @@ def spawn_random_platform(dt:float|None = None, x:int|None = None, y:int|None = 
 
     speed = platform_spawn_speeds[height_index]
 
+    # Set default position based on speed direction
     if(x is None):
         if(speed < 0):
+            # Put behind right side of screen
             x = screen.get_width()
         else:
+            # Put behind left side of screen
             x = 0
+    # Populate y if not specified
     if(y is None):
         y = platform_spawn_heights[height_index]
 
@@ -151,14 +178,19 @@ def respawn_player():
     # Reset motion and position
     player_motion = pygame.Vector2()
     move_player_to(screen.get_width()/2, screen.get_height()/2)
+    # Set player sprite to the dead sprite and reset 500ms later
     player_state = "dead"
     pygame.time.set_timer(PLAYER_RESET_STATE, 500, 1)
 
 def on_gameplay_events(event, dt:float):
-    global _debug, player_state
+    global _debug, player_state, paused
 
     # Key presses
     if event.type == pygame.KEYDOWN:
+        # Pause menu
+        if event.key == pygame.K_ESCAPE:
+            paused = not paused
+
         if event.key == pygame.K_LEFT:
             input_vector.x += -1
         if event.key == pygame.K_RIGHT:
@@ -180,22 +212,23 @@ def on_gameplay_events(event, dt:float):
     # On Spawn Platform
     elif event.type == SPAWN_PLATFORM:
         spawn_random_platform(dt)
+    # Reset player's sprite
     elif event.type == PLAYER_RESET_STATE:
         player_state = "idle"
-
 
 def on_gameplay_update(dt:float):
     global player_position, player_state, _previous_cursor_pos, score_max_speed
     ######
     ## On Mouse Clicked
     ##
+    # DEBUG
     if pygame.mouse.get_pressed()[0]: # Left Click
         rect = calculate_sprite_rect(pygame.mouse.get_pos()[0], pygame.mouse.get_pos()[1], platform_sprites[1])
 
         cursor_motion = pygame.mouse.get_pos() - _previous_cursor_pos
-        platforms.append(Platform(1, rect, cursor_motion/dt ))
-        
+        platforms.append(Platform(1, rect, cursor_motion/dt ))        
     _previous_cursor_pos = Vector2(pygame.mouse.get_pos())
+    # END DEBUG
 
     ######
     ## Physics Update
@@ -210,14 +243,14 @@ def on_gameplay_update(dt:float):
     # Clamp X axis and bounce
     if(player_rect.right >= screen.get_width() or player_rect.left <= 0):
         move_player_to(x = max(player_rect.width/2, min(player_position.x, screen.get_width())))
-        player_motion.x *= -bounce_factor.x
+        player_motion.x *= -player_bounce_factor.x
         # Step movement again to avoid getting stuck in wall
         move_player_by(player_motion*dt)
     
     # Screen hit top
     if(player_rect.top <= 0):
         move_player_to(y=max(player_rect.height/2, min(player_position.y, screen.get_height())))
-        player_motion.y *= -bounce_factor.y
+        player_motion.y *= -player_bounce_factor.y
         # Step movement again to avoid getting stuck in wall
         move_player_by(player_motion*dt)
     
@@ -258,22 +291,22 @@ def on_gameplay_update(dt:float):
             axis = (round(angle / half_pi) * half_pi / math.tau) % 1
 
             if(axis < 0.25):   # Left
-                player_motion.x *= -bounce_factor.x
+                player_motion.x *= -player_bounce_factor.x
                 if(platform.motion.x < 0): # If platform is moving left
                     player_motion.x += platform.motion.x
                 player_position.x = platform.rect.topleft[0] - player_rect.width/2 - 1
             elif(axis < 0.5):  # Up
-                player_motion.y *= -bounce_factor.y
+                player_motion.y *= -player_bounce_factor.y
                 if(platform.motion.y < 0): # If platform is moving up
                     player_motion.y = (player_motion.y + platform.motion.y) * 0.8
                 player_position.y = platform.rect.topleft[1] - player_rect.height/2 - 1
             elif(axis < 0.75): # Right
-                player_motion.x *= -bounce_factor.x
+                player_motion.x *= -player_bounce_factor.x
                 if(platform.motion.x > 0): # If platform is moving right
                     player_motion.x += platform.motion.x
                 player_position.x = platform.rect.bottomright[0] + player_rect.width/2 + 1
             else: # Down
-                player_motion.y *= -bounce_factor.y
+                player_motion.y *= -player_bounce_factor.y
                 if(platform.motion.y > 0): # If platform is moving down
                     player_motion.y += (player_motion.y + platform.motion.y) * 0.8
                 player_position.y = platform.rect.bottomright[1] + player_rect.height/2 + 1
@@ -282,16 +315,6 @@ def on_gameplay_update(dt:float):
             #pygame.time.set_timer(PLAYER_BOUNCE_END, 500, 1)
 
 def on_gameplay_draw():
-    screen.fill("black")
-
-    # Get the current background
-    bg = background_sprites[background]
-    # Determine the amount of times to tile the background based on width
-    background_tile_count = math.ceil(screen.get_width() / bg.get_width())
-    # Tile the background to fill the screen
-    for i in range(background_tile_count):
-        screen.blit(bg, (bg.get_width()*i, 0))
-
     for platform in platforms:
         screen.blit(platform_sprites[platform.sprite_index], platform.rect.topleft)
 
@@ -302,14 +325,17 @@ def on_gameplay_draw():
         pygame.draw.line(screen, (255,0,0), player_rect.center, player_motion + player_rect.center, 5)
         #pygame.draw.line(screen, (0,255,0), pygame.mouse.get_pos(), _previous_cursor_pos, 5)
 
-        screen.blit(font.render("Platforms %s" % len(platforms), True, (0,0,0)), (50,50))
-        screen.blit(font.render("{0.x:3.2f}; {0.y:3.2f}".format(player_motion), True, (0,0,0)), (50,75))
-        screen.blit(font.render("%3.2f; %3.2f" % player_rect.center, True, (0,0,0)), (50,100))
+        screen.blit(debug_font.render("Platforms %s" % len(platforms), True, (0,0,0)), (50,50))
+        screen.blit(debug_font.render("{0.x:3.2f}; {0.y:3.2f}".format(player_motion), True, (0,0,0)), (50,75))
+        screen.blit(debug_font.render("%3.2f; %3.2f" % player_rect.center, True, (0,0,0)), (50,100))
 
-        screen.blit(font.render("%3.2f" % score_max_speed, True, (0,0,0)), (50,150))
+        screen.blit(debug_font.render("%3.2f" % score_max_speed, True, (0,0,0)), (50,150))
         
 
-        
+def on_title_draw():
+    screen.blit(title_text, (screen.get_width()/2 - title_text.get_width()/2,64))
+    # Add quit and play buttons
+
 
 def populate_platforms():
     for i in range(5):
@@ -326,26 +352,68 @@ populate_platforms()
 while running:
     dt = clock.tick(60)/1000
 
+    mouse_pos = pygame.mouse.get_pos()
+
+    # Button clicks
+    if pygame.mouse.get_pressed()[0]: # Left click
+        if paused:
+            # Quit btn
+            if pygame.Rect.collidepoint(paused_quit_rect.scale_by(1.2,1.2), mouse_pos):
+                running = False
+                break
+
+
     # poll for events
     # pygame.QUIT event means the user clicked X to close your window
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+
         if scene == 1:
             on_gameplay_events(event, dt)
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_F4:
+                scene = (scene+1)%3
+                print("Changed scene to %i" % scene)
 
     ######
     ## On Update
     ##
-    if scene == 1:
+    if scene == 1 and not paused:
         #print(dt)
         on_gameplay_update(dt)
 
     ######
     ## On Draw
     ##
+    ### Draw background
+    if not paused:
+        # Get the current background
+        bg = background_sprites[background]
 
-    if scene == 1:
-        on_gameplay_draw()
+        # Tile the background to fill the screen
+        for i in range(background_tile_count):
+            screen.blit(bg, (bg.get_width()*i, 0))
+
+        # Draw scene
+        if scene == 0: # Title
+            on_title_draw()
+        if scene == 1: # Gameplay
+            on_gameplay_draw()
+    
+    else:
+        # Draw a background for the paused text with some padding
+        pygame.draw.rect(screen, (0,0,0), paused_rect.scale_by(1.2,1.2))
+        # Draw the paused text
+        screen.blit(paused_text, paused_rect)
+
+        # Add a quit button to corner to go to menu
+        padded_quit_rect = paused_quit_rect.scale_by(1.2,1.2)
+        if pygame.Rect.collidepoint(padded_quit_rect, mouse_pos):
+            pygame.draw.rect(screen, (100,100,100), padded_quit_rect)
+        else:
+            pygame.draw.rect(screen, (0,0,0), padded_quit_rect)
+        screen.blit(paused_quit, paused_quit_rect)
 
     pygame.display.update()
