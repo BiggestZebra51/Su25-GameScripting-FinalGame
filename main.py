@@ -21,12 +21,17 @@ background_sprites = [
     pygame.image.load("sprites/backgrounds/desert.png"),
 ]
 # Platform Sprites
-platform_sprites = [
-    pygame.image.load("sprites/platforms/stone/small.png"),
-    pygame.image.load("sprites/platforms/stone/medium.png"),
-    pygame.image.load("sprites/platforms/stone/medium.png"),
-    pygame.image.load("sprites/platforms/stone/large.png"),
-]
+platform_types = ["wood","stone","metal","glass"]
+platform_sprites:dict[str, list] = {}
+# Collect and scale platform sprites
+global_platform_scale = 0.75
+for platform_type in platform_types:
+    sizes = []
+    for platform_size in ["small","medium","large"]:
+        sprite = pygame.image.load("sprites/platforms/%s/%s.png" % (platform_type, platform_size))
+        sizes.append(pygame.transform.scale_by(sprite, global_platform_scale))
+    platform_sprites[platform_type] = sizes
+
 # Player Sprites
 player_sprites = {
     "idle": pygame.image.load("sprites/player/idle.png"),
@@ -46,13 +51,6 @@ pygame.display.set_icon(player_sprites["idle"])
 # Rescale background images to fit screen height, assuming the images are square
 for i in range(len(background_sprites)):
     background_sprites[i] = pygame.transform.scale(background_sprites[i], (screen.get_height(), screen.get_height()))
-
-# Rescale the platforms to be a little smaller
-# TODO Bake this
-global_platform_scale = 0.75
-for i in range(len(platform_sprites)):
-    sprite = platform_sprites[i]
-    platform_sprites[i] = pygame.transform.scale(sprite, (sprite.get_width() * global_platform_scale, sprite.get_height() * global_platform_scale))
 
 # Setup fonts
 pygame.font.init() # you have to call this at the start, 
@@ -94,9 +92,12 @@ paused_quit_rect.bottomleft = (50, screen.get_height() - 50)
 results_page_rect = calculate_centered_rect(screen.get_width()/2, screen.get_height()/2,\
                                             screen.get_width()/3.25, screen.get_height()/1.25)
 
-results_text = title_font.render("You died", True, (255,255,255))
-results_rect = results_text.get_rect()
-results_rect.center = (int(screen.get_width()/2), int(results_page_rect.top + results_rect.h/2))
+results_game_over = title_font.render("You died", True, (255,255,255))
+results_game_over_rect = results_game_over.get_rect()
+results_game_over_rect.center = (int(screen.get_width()/2), int(results_page_rect.top + results_game_over_rect.h/2))
+results_next_level = title_font.render("Level Up", True, (255,255,255))
+results_next_level_rect = results_next_level.get_rect()
+results_next_level_rect.center = (int(screen.get_width()/2), int(results_page_rect.top + results_next_level_rect.h/2))
 
 # Results screen Quit button
 results_quit = button_font.render("Return", True, (255,255,255))
@@ -110,6 +111,12 @@ results_retry_rect = results_retry.get_rect().scale_by(1.2,1.2)
 # Put in bottom left corner of screen
 results_retry_rect.bottomright = (screen.get_width() - 50, screen.get_height() - 50)
 
+# Results screen next button
+results_next = button_font.render("Next", True, (255,255,255))
+results_next_rect = results_next.get_rect().scale_by(1.2,1.2)
+# Put in bottom left corner of screen
+results_next_rect.bottomright = (screen.get_width() - 50, screen.get_height() - 50)
+
 # Setup clock
 clock = pygame.time.Clock()
 
@@ -117,6 +124,8 @@ clock = pygame.time.Clock()
 half_pi = math.pi / 2
 
 player_max_lives = 5
+levelup_score_threshold = 1500
+
 # Player physics constants
 player_gravity = 200
 player_control_speed = 500
@@ -140,6 +149,8 @@ paused = False
 scene = 0
 background = random.randint(0, len(background_sprites)-1)
 
+difficulty_level = 1
+
 _debug = False
 _previous_cursor_pos = Vector2()
 
@@ -147,7 +158,8 @@ input_vector = pygame.Vector2()
 player_motion = pygame.Vector2()
 player_state = "idle"
 player_lives = 0
-
+player_dead = False
+# Time stats
 game_start_time = 0
 life_start_time = 0
 
@@ -156,31 +168,44 @@ life_start_time = 0
 player_position = pygame.Vector2()
 player_rect = player_sprites["idle"].get_rect()
 
+# Level's platform type
+current_platform_type = ""
 # List of all platforms
 platforms:list[Platform] = []
 # Dictionary of statistics to keep track of and print in the results page
 results_stats:dict[str,ScoreStat] = {}
-
+# Results page score field label
 results_stats_score = stats_font.render("Score", True, (255,255,255))
 results_stats_score_rect = results_stats_score.get_rect()
 results_stats_score_rect.left = results_page_rect.left + 25
 results_stats_score_rect.bottom = results_page_rect.bottom - 25
 
-def add_results_stat(stat:str, multiplier:float = 1):
-    """ Adds a new score statistic with the key "stat" """
+results_stats_difficulty = stats_font.render("Difficulty Level", True, (255,255,255))
+results_stats_difficulty_rect = results_stats_difficulty.get_rect()
+results_stats_difficulty_rect.left = results_page_rect.left + 25
+results_stats_difficulty_rect.bottom = results_page_rect.bottom - 25 - results_stats_score_rect.h
+
+def add_results_stat(stat:str, multiplier:float = 1, real_time:bool = True):
+    """ Adds a new score statistic with the key "stat"
+
+    `multiplier` if set scales this `value` in the score results, defaults to 1.0
+
+    `real_time` if set controls whether value is used in level threshold, defaults to True """
     # Format highest_speed to Highest Speed
     text = stats_font.render(str.capitalize(stat).replace('_', ' '), True, (255,255,255))
     rect = text.get_rect()
     rect.left = results_page_rect.left + 25
     rect.centery = 150 + len(results_stats) * (rect.h+12)
 
-    results_stats[stat] = ScoreStat(text, rect, multiplier)
+    results_stats[stat] = ScoreStat(text, rect, multiplier, real_time)
 
-add_results_stat("total_time", 0.01)
+# Exclude total time from "real time" score
+add_results_stat("total_time", 0.01, False)
 add_results_stat("longest_life", 0.01)
 add_results_stat("highest_speed")
 add_results_stat("wall_bounces", 10)
 add_results_stat("platform_bounces", 50)
+add_results_stat("deaths", -100, False)
 
 
 # Move player storing the position as a floating vector instead of a pixel perfect position
@@ -222,9 +247,12 @@ def spawn_random_platform(dt:float|None = None, x:int|None = None, y:int|None = 
 
     # Add variation to length and position
     height_index = random.randint(0, len(platform_spawn_heights) - 1)
-    sprite_index = random.randint(0, len(platform_sprites) - 1)
+    sprite_index = random.randint(0, len(platform_sprites["wood"]) - 1)
 
     speed = platform_spawn_speeds[height_index]
+    # Increment the speed for every level above 1
+    if (difficulty_level > 1):
+        speed *= max(1,difficulty_level/2) * 1.1
 
     # Set default position based on speed direction
     if(x is None):
@@ -238,7 +266,7 @@ def spawn_random_platform(dt:float|None = None, x:int|None = None, y:int|None = 
     if(y is None):
         y = platform_spawn_heights[height_index]
 
-    sprite = platform_sprites[sprite_index]
+    sprite = platform_sprites[current_platform_type][sprite_index]
 
     # Offset the sprite spawn point off screen by half the sprite size
     if(speed < 0):
@@ -265,6 +293,8 @@ def respawn_player():
     # Set player sprite to the dead sprite and reset 500ms later
     player_state = "dead"
     player_lives -= 1
+    # This value will persist across level ups
+    results_stats["deaths"].value += 1
     pygame.time.set_timer(PLAYER_RESET_STATE, 500, 1)
 
     # Store this life's length if it is longer than the currently stored time
@@ -272,6 +302,19 @@ def respawn_player():
     life_start_time = pygame.time.get_ticks()
     
     results_stats["longest_life"].value = max(life_start_time - old_start_time, results_stats["longest_life"].value)
+
+def calculate_total_score(real_time = False):
+    total_score = 0
+    # Draw each score stat in the panel
+    for stat in results_stats:
+        # Skip non real time stats if we are checking for real time
+        if real_time and not results_stats[stat].real_time:
+            continue
+
+        # Add to the total score weighted by the stat's multiplier
+        total_score += int(results_stats[stat].value * results_stats[stat].multiplier)
+
+    return total_score
 
 def on_gameplay_events(event, dt:float):
     """
@@ -309,17 +352,23 @@ def on_gameplay_update(dt:float):
         Gameplay scene's update loop
     """
     global player_state
-    ######
-    ## On Mouse Clicked
-    ##
+
+    #results_stats["wall_bounces"].value
+
+    # get current ticks
+    current_time = pygame.time.get_ticks()
+    # Store the duration of this session
+    results_stats["total_time"].value =  current_time - game_start_time
+    # Store this life's length if it is longer than currently stored time
+    results_stats["longest_life"].value = max(current_time - life_start_time, results_stats["longest_life"].value)
 
     # DEBUG
     if _debug:
         if pygame.mouse.get_pressed()[0]: # Left Click
-            rect = calculate_centered_rect(pygame.mouse.get_pos()[0], pygame.mouse.get_pos()[1], platform_sprites[1].get_width(), platform_sprites[1].get_height())
+            rect = calculate_centered_rect(pygame.mouse.get_pos()[0], pygame.mouse.get_pos()[1], platform_sprites[current_platform_type][1].get_width(), platform_sprites[current_platform_type][1].get_height())
 
             cursor_motion = pygame.mouse.get_pos() - _previous_cursor_pos
-            platforms.append(Platform(1, rect, cursor_motion/dt ))        
+            platforms.append(Platform(1, rect, cursor_motion/dt ))
         _previous_cursor_pos.update(pygame.mouse.get_pos())
     # END DEBUG
 
@@ -410,13 +459,18 @@ def on_gameplay_update(dt:float):
                     player_motion.y += (player_motion.y + platform.motion.y) * 0.8
                 player_position.y = platform.rect.bottomright[1] + player_rect.height/2 + 1
 
+            # If this platform is glass we should remove it
+            if current_platform_type == "glass":
+                platforms.remove(platform)
+
+
 def on_gameplay_draw():
     """
         Gameplay scene's draw loop
     """
     # Draw each platform
     for platform in platforms:
-        screen.blit(platform_sprites[platform.sprite_index], platform.rect.topleft)
+        screen.blit(platform_sprites[current_platform_type][platform.sprite_index], platform.rect.topleft)
 
     # Draw the player
     screen.blit(player_sprites[player_state], player_rect)
@@ -447,6 +501,13 @@ def on_gameplay_hud_draw():
             screen.blit(heart_sprites[1], position)
         else:
             screen.blit(heart_sprites[0], position)
+
+    score_text = button_font.render("%i"  % calculate_total_score(True), True, (100,100,150))
+    score_rect = score_text.get_rect()
+    score_rect.topright = (screen.get_width() - 50, 50)
+    screen.blit(score_text, score_rect)
+
+
 
 
 def draw_button(text:pygame.Surface, rect:Rect, mouse_pos):
@@ -491,20 +552,30 @@ def on_paused_overlay_draw(mouse_pos):
     # Add a quit button to corner to go to menu
     draw_button(paused_quit, paused_quit_rect, mouse_pos)
 
+
 def on_results_draw(mouse_pos):
     """
         Result page scene's update loop
     """
     # Add a quit button to corner to go to menu
     draw_button(results_quit, results_quit_rect, mouse_pos)
-    # Add replay button
-    draw_button(results_retry, results_retry_rect, mouse_pos)
+    
+    if player_dead:
+        # Add replay button
+        draw_button(results_retry, results_retry_rect, mouse_pos)
+    else:
+        # Add replay button
+        draw_button(results_next, results_next_rect, mouse_pos)
 
     # Draw the transparent panel in the center of the screen
     pygame.draw.rect(transparent_overlay, (0,0,0,150), results_page_rect, border_radius=10)
     screen.blit(transparent_overlay, (0,0))
+    
     # Draw the results page text on top
-    screen.blit(results_text, results_rect)
+    if player_dead:
+        screen.blit(results_game_over, results_game_over_rect)
+    else:
+        screen.blit(results_next_level, results_next_level_rect)
 
     total_score = 0
     # Draw each score stat in the panel
@@ -526,8 +597,9 @@ def on_results_draw(mouse_pos):
     # Print total score
     # Draw label
     screen.blit(results_stats_score, results_stats_score_rect)
+    screen.blit(results_stats_difficulty, results_stats_difficulty_rect)
     
-    # Render the value's text
+    # Render the score
     stat_text = stats_font.render("%i" % total_score, True, (255,255,255))
     stat_rect = stat_text.get_rect()
     # Center the value with the label, then right align to the panel
@@ -536,7 +608,15 @@ def on_results_draw(mouse_pos):
     # Draw the value
     screen.blit(stat_text, stat_rect)
     
-
+    # Render the difficulty level
+    stat_text = stats_font.render("%i" % difficulty_level, True, (255,255,255))
+    stat_rect = stat_text.get_rect()
+    # Center the value with the label, then right align to the panel
+    stat_rect.centery =  results_stats_difficulty_rect.centery
+    stat_rect.right = results_page_rect.right - 25
+    # Draw the value
+    screen.blit(stat_text, stat_rect)
+    
 def populate_platforms():
     """
         Spawns platforms randomly on each floor
@@ -550,17 +630,30 @@ def populate_platforms():
         # Spawn platform
         spawn_random_platform(x=x)
 
-def initialize_gameplay():
+def initialize_gameplay(next_level = False):
     """
         Initialize/Reset all gameplay variables and stats
     """
-    global player_state, player_lives, game_start_time, life_start_time
+    global player_state, player_lives, game_start_time, life_start_time, player_dead, \
+        difficulty_level, current_platform_type, background
     
     # Reset variables
     input_vector.update()
     player_motion.update()
     player_state = "idle"
     player_lives = player_max_lives
+    player_dead = False
+
+    background = random.randint(0, len(background_sprites)-1)
+
+    if not next_level:
+        difficulty_level = 1
+    else:
+        difficulty_level += 1
+
+    # Increment current platform type max range with level
+    platform_range = min(difficulty_level, len(platform_types)) - 1
+    current_platform_type = platform_types[random.randint(0, platform_range)]
 
     # Center player
     move_player_to(screen.get_width()/2, screen.get_height()/2 - 100)
@@ -568,16 +661,21 @@ def initialize_gameplay():
     platforms.clear()
 
     # Stats
-    for stat in results_stats:
-        results_stats[stat].value = 0
+    if not next_level:
+        for stat in results_stats:
+            results_stats[stat].value = 0
 
     # Initialization
-    pygame.time.set_timer(SPAWN_PLATFORM, platform_spawn_rate)
+    pygame.time.set_timer(SPAWN_PLATFORM, int(platform_spawn_rate / difficulty_level))
     populate_platforms()
 
     # Set starting time for life and game
-    game_start_time = pygame.time.get_ticks()
-    life_start_time = game_start_time
+    life_start_time = pygame.time.get_ticks()
+    if next_level:
+        # Restore relative time start
+        game_start_time = pygame.time.get_ticks() - results_stats["total_time"].value
+    else:
+        game_start_time = life_start_time
 
 # Game Loop
 while running:
@@ -608,7 +706,8 @@ while running:
             # Replay
             elif pygame.Rect.collidepoint(results_retry_rect, mouse_pos):
                 scene = 1
-                initialize_gameplay()
+                # Pass if this is next level or replay
+                initialize_gameplay(not player_dead)
 
 
     # poll for events
@@ -645,6 +744,18 @@ while running:
             results_stats["total_time"].value =  current_time - game_start_time
             # Store this life's length if it is longer than currently stored time
             results_stats["longest_life"].value = max(current_time - life_start_time, results_stats["longest_life"].value)
+            
+            player_dead = True
+            scene = 2
+        elif(calculate_total_score(True) >= levelup_score_threshold*difficulty_level):
+            # get current ticks
+            current_time = pygame.time.get_ticks()
+            # Store the duration of this session
+            results_stats["total_time"].value =  current_time - game_start_time
+            # Store this life's length if it is longer than currently stored time
+            results_stats["longest_life"].value = max(current_time - life_start_time, results_stats["longest_life"].value)
+
+            player_dead = False
             scene = 2
         else:
             on_gameplay_update(dt)
