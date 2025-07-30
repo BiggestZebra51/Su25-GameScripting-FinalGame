@@ -10,15 +10,15 @@ No horizontal camera movement
 - [X] Moving platforms across lake bed, varying heights
     - [X] Moving to the side, once off screen clear it
     - Account for spacing of other platforms (probably handled by time)
-- [] Get sprites
-    - [] Maybe grab alts for different 'levels'
+- [X] Get sprites
+    - [X] Maybe grab alts for different 'levels'
     - [X] Slime sprites or other round bouncy thingy
     - [x] Background sprites
         - [X] Add a condition that changes the background
     - [X] Platform sprites
     - [X] Hud sprites
         - [X] Hearts
-        - [] Score tally
+        - [X] Score tally
         - [] Menu buttons
 - [X] Add title screen with buttons
 - [X] Add end screen
