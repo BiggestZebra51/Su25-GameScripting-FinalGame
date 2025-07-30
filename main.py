@@ -5,8 +5,7 @@ import math
 from pygame import Vector2
 from pygame.rect import Rect
 # Internal
-from Platform import Platform
-from ScoreStat import ScoreStat
+from HelperClasses import *
 
 pygame.init()
 
