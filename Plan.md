@@ -5,9 +5,9 @@ No horizontal camera movement
 
 - [X] Player bounces off walls and ceiling 
 - [X] Add failure condition, missing platform and hitting ground
-    - [] Health? As in limited respawns
+    - [X] Health? As in limited respawns
     - [] Probably throw player with some motion on respawn
-- [] Moving platforms across lake bed, varying heights
+- [X] Moving platforms across lake bed, varying heights
     - [X] Moving to the side, once off screen clear it
     - Account for spacing of other platforms (probably handled by time)
 - [] Get sprites
@@ -16,14 +16,15 @@ No horizontal camera movement
     - [x] Background sprites
         - [X] Add a condition that changes the background
     - [X] Platform sprites
-    - [] Hud sprites
+    - [X] Hud sprites
+        - [X] Hearts
         - [] Score tally
         - [] Menu buttons
-- [] Add title screen with buttons
-- [] Add end screen
+- [X] Add title screen with buttons
+- [X] Add end screen
 - [x] Maybe change to using rect collision directly
-- [] Score for bounces, maybe a multiplier that resets on non platform bounce/respawn
-- [] Pause menu that can quit from?
+- [X] Score for bounces, maybe a multiplier that resets on non platform bounce/respawn
+- [X] Pause menu that can quit from?
 - COMMENT CODE 
 
 
