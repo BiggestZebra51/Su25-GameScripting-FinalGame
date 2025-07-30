@@ -9,7 +9,8 @@ class Platform():
         self.motion = motion
 
 class ScoreStat():
-    def __init__(self, text:Surface, rect:Rect):
+    def __init__(self, text:Surface, rect:Rect, multiplier:float = 1):
         self.value:int|float = 0
+        self.multiplier = multiplier
         self.text = text
         self.rect = rect

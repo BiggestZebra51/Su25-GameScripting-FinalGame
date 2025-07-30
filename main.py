@@ -148,6 +148,9 @@ player_motion = pygame.Vector2()
 player_state = "idle"
 player_lives = 0
 
+game_start_time = 0
+life_start_time = 0
+
 # We are going to use floating points for position for smoother velocity application
 # Apparently Pygame CE has a "frect" which would have solved this issue for me
 player_position = pygame.Vector2()
@@ -158,7 +161,12 @@ platforms:list[Platform] = []
 # Dictionary of statistics to keep track of and print in the results page
 results_stats:dict[str,ScoreStat] = {}
 
-def add_results_stat(stat:str):
+results_stats_score = stats_font.render("Score", True, (255,255,255))
+results_stats_score_rect = results_stats_score.get_rect()
+results_stats_score_rect.left = results_page_rect.left + 25
+results_stats_score_rect.bottom = results_page_rect.bottom - 25
+
+def add_results_stat(stat:str, multiplier:float = 1):
     """ Adds a new score statistic with the key "stat" """
     # Format highest_speed to Highest Speed
     text = stats_font.render(str.capitalize(stat).replace('_', ' '), True, (255,255,255))
@@ -166,11 +174,13 @@ def add_results_stat(stat:str):
     rect.left = results_page_rect.left + 25
     rect.centery = 150 + len(results_stats) * (rect.h+12)
 
-    results_stats[stat] = ScoreStat(text, rect)
+    results_stats[stat] = ScoreStat(text, rect, multiplier)
 
+add_results_stat("total_time", 0.01)
+add_results_stat("longest_life", 0.01)
 add_results_stat("highest_speed")
-add_results_stat("wall_bounces")
-add_results_stat("platform_bounces")
+add_results_stat("wall_bounces", 10)
+add_results_stat("platform_bounces", 50)
 
 
 # Move player storing the position as a floating vector instead of a pixel perfect position
@@ -248,16 +258,20 @@ def respawn_player():
     """
         Respawns the player while decrementing the current `player_lives`
     """
-    global player_state, player_lives
-
+    global player_state, player_lives, life_start_time
     # Reset motion and position
     player_motion.update()
-    move_player_to(screen.get_width()/2, screen.get_height()/2)
+    move_player_to(screen.get_width()/2, screen.get_height()/2 - 100)
     # Set player sprite to the dead sprite and reset 500ms later
     player_state = "dead"
     player_lives -= 1
     pygame.time.set_timer(PLAYER_RESET_STATE, 500, 1)
 
+    # Store this life's length if it is longer than the currently stored time
+    old_start_time = life_start_time
+    life_start_time = pygame.time.get_ticks()
+    
+    results_stats["longest_life"].value = max(life_start_time - old_start_time, results_stats["longest_life"].value)
 
 def on_gameplay_events(event, dt:float):
     """
@@ -492,19 +506,14 @@ def on_results_draw(mouse_pos):
     # Draw the results page text on top
     screen.blit(results_text, results_rect)
 
+    total_score = 0
     # Draw each score stat in the panel
     for stat in results_stats:
         # Draw label
         screen.blit(results_stats[stat].text, results_stats[stat].rect)
         
-        # Setup formatting for int vs float stats
-        if results_stats[stat].value is float:
-            format_str = "%.2f"
-        else:
-            format_str = "%i"
-
         # Render the value's text
-        stat_text = stats_font.render(format_str%results_stats[stat].value, True, (255,255,255))
+        stat_text = stats_font.render("%i" % int(results_stats[stat].value), True, (255,255,255))
         stat_rect = stat_text.get_rect()
         # Center the value with the label, then right align to the panel
         stat_rect.centery = results_stats[stat].rect.centery
@@ -512,6 +521,21 @@ def on_results_draw(mouse_pos):
         # Draw the value
         screen.blit(stat_text, stat_rect)
 
+        # Add to the total score weighted by the stat's multiplier
+        total_score += int(results_stats[stat].value * results_stats[stat].multiplier)
+    # Print total score
+    # Draw label
+    screen.blit(results_stats_score, results_stats_score_rect)
+    
+    # Render the value's text
+    stat_text = stats_font.render("%i" % total_score, True, (255,255,255))
+    stat_rect = stat_text.get_rect()
+    # Center the value with the label, then right align to the panel
+    stat_rect.centery =  results_stats_score_rect.centery
+    stat_rect.right = results_page_rect.right - 25
+    # Draw the value
+    screen.blit(stat_text, stat_rect)
+    
 
 def populate_platforms():
     """
@@ -530,7 +554,7 @@ def initialize_gameplay():
     """
         Initialize/Reset all gameplay variables and stats
     """
-    global player_state, player_lives
+    global player_state, player_lives, game_start_time, life_start_time
     
     # Reset variables
     input_vector.update()
@@ -544,13 +568,16 @@ def initialize_gameplay():
     platforms.clear()
 
     # Stats
-
     for stat in results_stats:
         results_stats[stat].value = 0
 
     # Initialization
     pygame.time.set_timer(SPAWN_PLATFORM, platform_spawn_rate)
     populate_platforms()
+
+    # Set starting time for life and game
+    game_start_time = pygame.time.get_ticks()
+    life_start_time = game_start_time
 
 # Game Loop
 while running:
@@ -612,6 +639,12 @@ while running:
     if scene == 1 and not paused:
         # Go to results if we run out of lives
         if player_lives <= 0:
+            # get current ticks
+            current_time = pygame.time.get_ticks()
+            # Store the duration of this session
+            results_stats["total_time"].value =  current_time - game_start_time
+            # Store this life's length if it is longer than currently stored time
+            results_stats["longest_life"].value = max(current_time - life_start_time, results_stats["longest_life"].value)
             scene = 2
         else:
             on_gameplay_update(dt)
